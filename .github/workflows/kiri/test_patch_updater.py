@@ -107,12 +107,46 @@ function applyPrefs() {
 <a data-open-site="https://runkiri.com/releases/">dl</a>
 """
 
+SAMPLE_INIT_MOD_RS = """fn host_dirs() -> io::Result<container::Paths> {
+    let paths = container::Paths { layers: root.join("layers"), containers: root.join("containers"), cgroup: host_cgroup()? };
+    mkdir(&paths.layers, 0o700)?;
+    mkdir(&paths.containers, 0o700)?;
+    Ok(paths)
+}
+"""
+
+SAMPLE_CONTAINER_RS = """pub fn mount_rootfs(paths: &Paths, id: &str, image_layers: StrList<'_>) -> io::Result<PathBuf> {
+    valid_id(id)?;
+    let base = paths.containers.join(id);
+    let (upper, work, rootfs) = (base.join("upper"), base.join("work"), base.join("rootfs"));
+    for d in [&upper, &work, &rootfs] {
+        fs::create_dir_all(d)?;
+    }
+    Ok(rootfs)
+}
+
+pub fn sweep(paths: &Paths, cgroup: &std::path::Path) {
+    for id in &ids {
+        let cg = cgroup.join(id);
+        if !cg.is_dir() {
+            continue;
+        }
+        kill_cgroup(&cg);
+        let _ = sys::umount_lazy(&paths.containers.join(id).join("rootfs"));
+        let _ = fs::remove_dir_all(PathBuf::from("/run/kiri").join(id));
+        remove_cgroup(&cg);
+    }
+}
+"""
+
 class PatchUpdaterTests(unittest.TestCase):
     def test_patch_wires_arch_linux_updater(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = pathlib.Path(tmp)
             ui_dir = root / 'crates/kiri/src/ui'
             ui_dir.mkdir(parents=True)
+            init_dir = root / 'crates/kiri-init/src/linux'
+            init_dir.mkdir(parents=True)
             (ui_dir / 'linux.rs').write_text(SAMPLE_LINUX_RS, encoding='utf-8')
             (ui_dir / 'mod.rs').write_text(SAMPLE_UI_MOD_RS, encoding='utf-8')
             (ui_dir / 'k8s.rs').write_text(SAMPLE_K8S_RS, encoding='utf-8')
@@ -120,6 +154,8 @@ class PatchUpdaterTests(unittest.TestCase):
             (ui_dir / 'logins.rs').write_text(SAMPLE_LOGINS_RS, encoding='utf-8')
             (ui_dir / 'index.html').write_text(SAMPLE_INDEX_HTML, encoding='utf-8')
             (root / 'crates/kiri/src/main.rs').write_text(SAMPLE_MAIN_RS, encoding='utf-8')
+            (init_dir / 'mod.rs').write_text(SAMPLE_INIT_MOD_RS, encoding='utf-8')
+            (init_dir / 'container.rs').write_text(SAMPLE_CONTAINER_RS, encoding='utf-8')
             patch_updater.patch_tree(root, 'zamkara/kiri-archlinux')
             patched_linux = (ui_dir / 'linux.rs').read_text(encoding='utf-8')
             patched_mod = (ui_dir / 'mod.rs').read_text(encoding='utf-8')
@@ -128,6 +164,8 @@ class PatchUpdaterTests(unittest.TestCase):
             patched_logins = (ui_dir / 'logins.rs').read_text(encoding='utf-8')
             patched_html = (ui_dir / 'index.html').read_text(encoding='utf-8')
             patched_main = (root / 'crates/kiri/src/main.rs').read_text(encoding='utf-8')
+            patched_init_mod = (init_dir / 'mod.rs').read_text(encoding='utf-8')
+            patched_container = (init_dir / 'container.rs').read_text(encoding='utf-8')
             self.assertIn('const ARCH_REPOSITORY: &str = "zamkara/kiri-archlinux"', patched_linux)
             self.assertIn('pub fn run_cli(args: &[String])', patched_linux)
             self.assertNotIn('update_state("package"', patched_mod)
@@ -138,6 +176,9 @@ class PatchUpdaterTests(unittest.TestCase):
             self.assertIn(':root[data-theme="light"]', patched_html)
             self.assertIn('document.documentElement.dataset.theme = darkNow() ? "dark" : "light";', patched_html)
             self.assertIn('ui::linux::update::run_cli', patched_main)
+            self.assertIn('sys::remount(c"/var/lib/kiri/containers", libc::MS_PRIVATE | libc::MS_REC)', patched_init_mod)
+            self.assertIn('let _ = sys::umount_lazy(&rootfs);', patched_container)
+            self.assertIn('if cg.is_dir() {', patched_container)
 
 if __name__ == '__main__':
     unittest.main()
