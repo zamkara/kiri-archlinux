@@ -581,24 +581,6 @@ mod os {
         logins_text = logins_text.replace(old_linux_os, new_linux_os, 1)
         logins_rs.write_text(logins_text, encoding='utf-8')
 
-    init_mod_rs = root / 'crates/kiri-init/src/linux/mod.rs'
-    if init_mod_rs.is_file():
-        init_mod_text = init_mod_rs.read_text(encoding='utf-8')
-        old_host_dirs = """    let paths = container::Paths { layers: root.join("layers"), containers: root.join("containers"), cgroup: host_cgroup()? };
-    mkdir(&paths.layers, 0o700)?;
-    mkdir(&paths.containers, 0o700)?;"""
-        new_host_dirs = """    let paths = container::Paths { layers: root.join("layers"), containers: root.join("containers"), cgroup: host_cgroup()? };
-    mkdir(&paths.layers, 0o700)?;
-    mkdir(&paths.containers, 0o700)?;
-    if !volmount::mounted("/var/lib/kiri/containers") {
-        let _ = sys::mount(c"/var/lib/kiri/containers", c"/var/lib/kiri/containers", c"none", libc::MS_BIND | libc::MS_REC, None);
-    }
-    let _ = sys::remount(c"/var/lib/kiri/containers", libc::MS_PRIVATE | libc::MS_REC);"""
-        if old_host_dirs not in init_mod_text:
-            raise SystemExit('Could not find paths setup in crates/kiri-init/src/linux/mod.rs')
-        init_mod_text = init_mod_text.replace(old_host_dirs, new_host_dirs, 1)
-        init_mod_rs.write_text(init_mod_text, encoding='utf-8')
-
     container_rs = root / 'crates/kiri-init/src/linux/container.rs'
     if container_rs.is_file():
         container_text = container_rs.read_text(encoding='utf-8')
@@ -614,7 +596,6 @@ mod os {
     let base = paths.containers.join(id);
     let (upper, work, rootfs) = (base.join("upper"), base.join("work"), base.join("rootfs"));
     let _ = sys::umount_lazy(&rootfs);
-    let _ = fs::remove_dir_all(&work);
     for d in [&upper, &work, &rootfs] {
         fs::create_dir_all(d)?;
     }"""
