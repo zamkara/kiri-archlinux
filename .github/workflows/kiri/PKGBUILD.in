@@ -10,7 +10,8 @@ depends=('glibc' 'gcc-libs' 'systemd' 'pacman' 'polkit' 'gtk3' 'webkit2gtk-4.1'
          'hicolor-icon-theme' 'desktop-file-utils')
 makedepends=('rust' 'cargo' 'pkgconf' 'python' 'gtk3' 'webkit2gtk-4.1'
              'desktop-file-utils')
-optdepends=('docker: an existing Docker CLI keeps precedence on PATH')
+optdepends=('docker: an existing Docker CLI keeps precedence on PATH'
+            'wl-clipboard: persistent Wayland clipboard support')
 provides=('kiri')
 conflicts=('kiri-lite' 'kiri-bin' 'kiri-git')
 options=('!lto' '!debug' '!strip')

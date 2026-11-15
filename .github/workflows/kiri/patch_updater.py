@@ -369,6 +369,85 @@ def patch_tree(root: pathlib.Path, repository: str = 'zamkara/kiri-archlinux') -
         html = html.replace(old_deb, new_deb)
         index_html.write_text(html, encoding='utf-8')
 
+    k8s_rs = root / 'crates/kiri/src/ui/k8s.rs'
+    if k8s_rs.is_file():
+        k8s_text = k8s_rs.read_text(encoding='utf-8')
+        old_k8s_copy = """fn copy(text: &str) {
+    use std::io::Write;
+    let done = std::process::Command::new("/usr/bin/pbcopy").stdin(std::process::Stdio::piped()).spawn().and_then(|mut c| {
+        c.stdin.take().expect("piped").write_all(text.as_bytes())?;
+        c.wait()
+    });
+    match done {
+        Ok(s) if s.success() => emit(notice("ok", &super::trf("Copied {text}", &[("text", &text)]))),
+        _ => emit(notice("error", &super::tr("Couldn't copy to the clipboard"))),
+    }
+}"""
+        new_k8s_copy = """#[cfg(target_os = "linux")]
+fn copy(text: &str) {
+    super::window::copy(text);
+    emit(notice("ok", &super::trf("Copied {text}", &[("text", &text)])));
+}
+
+#[cfg(not(target_os = "linux"))]
+fn copy(text: &str) {
+    use std::io::Write;
+    let done = std::process::Command::new("/usr/bin/pbcopy").stdin(std::process::Stdio::piped()).spawn().and_then(|mut c| {
+        c.stdin.take().expect("piped").write_all(text.as_bytes())?;
+        c.wait()
+    });
+    match done {
+        Ok(s) if s.success() => emit(notice("ok", &super::trf("Copied {text}", &[("text", &text)]))),
+        _ => emit(notice("error", &super::tr("Couldn't copy to the clipboard"))),
+    }
+}"""
+        if old_k8s_copy not in k8s_text:
+            raise SystemExit('Could not find fn copy in crates/kiri/src/ui/k8s.rs')
+        k8s_text = k8s_text.replace(old_k8s_copy, new_k8s_copy, 1)
+        k8s_rs.write_text(k8s_text, encoding='utf-8')
+
+    gtk_rs = root / 'crates/kiri/src/ui/gtk.rs'
+    if gtk_rs.is_file():
+        gtk_text = gtk_rs.read_text(encoding='utf-8')
+        old_gtk_copy = """pub(super) fn copy(text: &str) {
+    let text = text.to_owned();
+    glib::MainContext::default().invoke(move || {
+        let clipboard = gtk::Clipboard::get(&gtk::gdk::SELECTION_CLIPBOARD);
+        clipboard.set_text(&text);
+        // Kept after the window quits, where the desktop has a clipboard manager.
+        clipboard.store();
+    });
+}"""
+        new_gtk_copy = """pub(super) fn copy(text: &str) {
+    let text = text.to_owned();
+    if std::env::var_os("WAYLAND_DISPLAY").is_some() {
+        let wl_text = text.clone();
+        std::thread::spawn(move || {
+            use std::io::Write;
+            if let Ok(mut c) = std::process::Command::new("wl-copy")
+                .stdin(std::process::Stdio::piped())
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .spawn()
+            {
+                let _ = c.stdin.take().map(|mut i| i.write_all(wl_text.as_bytes()));
+                let _ = c.wait();
+            }
+        });
+    }
+    glib::MainContext::default().invoke(move || {
+        let clipboard = gtk::Clipboard::get(&gtk::gdk::SELECTION_CLIPBOARD);
+        clipboard.set_text(&text);
+        // Kept after the window quits, where the desktop has a clipboard manager.
+        clipboard.store();
+    });
+}"""
+        if old_gtk_copy not in gtk_text:
+            raise SystemExit('Could not find pub(super) fn copy in crates/kiri/src/ui/gtk.rs')
+        gtk_text = gtk_text.replace(old_gtk_copy, new_gtk_copy, 1)
+        gtk_rs.write_text(gtk_text, encoding='utf-8')
+
+
 
 if __name__ == '__main__':
     repo = sys.argv[2] if len(sys.argv) > 2 else 'zamkara/kiri-archlinux'
