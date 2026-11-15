@@ -367,6 +367,67 @@ def patch_tree(root: pathlib.Path, repository: str = 'zamkara/kiri-archlinux') -
         old_deb = 'https://runkiri.com/releases/'
         new_deb = f'https://github.com/{repository}/releases/latest'
         html = html.replace(old_deb, new_deb)
+
+        old_media_root = """@media (prefers-color-scheme: light) {
+  :root {
+    --bg: #F5F7FA; --side: #EDF0F5; --panel: #FFFFFF; --raised: #F3F5F9; --line: #DDE3EB;
+    --text: #0F1419; --muted: #5E6773; --faint: #8A929C; --row-hover: rgba(15, 20, 25, .035);
+    --sun-text: #8A6100; --red-text: #B42318; --ext-text: #6941C6;
+    color-scheme: light;
+  }
+}"""
+        new_media_root = """@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --bg: #F5F7FA; --side: #EDF0F5; --panel: #FFFFFF; --raised: #F3F5F9; --line: #DDE3EB;
+    --text: #0F1419; --muted: #5E6773; --faint: #8A929C; --row-hover: rgba(15, 20, 25, .035);
+    --sun-text: #8A6100; --red-text: #B42318; --ext-text: #6941C6;
+    color-scheme: light;
+  }
+}
+:root[data-theme="light"] {
+  --bg: #F5F7FA; --side: #EDF0F5; --panel: #FFFFFF; --raised: #F3F5F9; --line: #DDE3EB;
+  --text: #0F1419; --muted: #5E6773; --faint: #8A929C; --row-hover: rgba(15, 20, 25, .035);
+  --sun-text: #8A6100; --red-text: #B42318; --ext-text: #6941C6;
+  color-scheme: light;
+}"""
+        if old_media_root in html:
+            html = html.replace(old_media_root, new_media_root, 1)
+
+        html = html.replace(
+            '@media (prefers-color-scheme: light) { :root { --lit-hi: #0F9E6A; } }',
+            '@media (prefers-color-scheme: light) { :root:not([data-theme="dark"]) { --lit-hi: #0F9E6A; } }\n:root[data-theme="light"] { --lit-hi: #0F9E6A; }',
+            1,
+        )
+        html = html.replace(
+            '@media (prefers-color-scheme: light) { .link { color: var(--blue); } }',
+            '@media (prefers-color-scheme: light) { :root:not([data-theme="dark"]) .link { color: var(--blue); } }\n:root[data-theme="light"] .link { color: var(--blue); }',
+            1,
+        )
+        html = html.replace(
+            '@media (prefers-color-scheme: light) { .dialog.alert > .ico.info { --ink: var(--blue); } }',
+            '@media (prefers-color-scheme: light) { :root:not([data-theme="dark"]) .dialog.alert > .ico.info { --ink: var(--blue); } }\n:root[data-theme="light"] .dialog.alert > .ico.info { --ink: var(--blue); }',
+            1,
+        )
+        html = html.replace(
+            '@media (prefers-color-scheme: light) { :root { --term-bg: #FFFFFF; --term-fg: #1F2328; } }',
+            '@media (prefers-color-scheme: light) { :root:not([data-theme="dark"]) { --term-bg: #FFFFFF; --term-fg: #1F2328; } }\n:root[data-theme="light"] { --term-bg: #FFFFFF; --term-fg: #1F2328; }',
+            1,
+        )
+        html = html.replace(
+            '@media (prefers-color-scheme: light) { .htdrawer { box-shadow: 0 -8px 22px rgb(0 0 0 / .10); } }',
+            '@media (prefers-color-scheme: light) { :root:not([data-theme="dark"]) .htdrawer { box-shadow: 0 -8px 22px rgb(0 0 0 / .10); } }\n:root[data-theme="light"] .htdrawer { box-shadow: 0 -8px 22px rgb(0 0 0 / .10); }',
+            1,
+        )
+        html = html.replace(
+            'function applyPrefs() {\n  const r = document.documentElement.style;',
+            'function applyPrefs() {\n  document.documentElement.dataset.theme = darkNow() ? "dark" : "light";\n  const r = document.documentElement.style;',
+            1,
+        )
+        html = html.replace(
+            'matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => { themeBtn(); if (ui.view === "settings") render(); });',
+            'matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => { applyPrefs(); themeBtn(); if (ui.view === "settings") render(); });',
+            1,
+        )
         index_html.write_text(html, encoding='utf-8')
 
     k8s_rs = root / 'crates/kiri/src/ui/k8s.rs'

@@ -62,6 +62,26 @@ SAMPLE_GTK_RS = """pub(super) fn copy(text: &str) {
 }
 """
 
+SAMPLE_INDEX_HTML = """@media (prefers-color-scheme: light) {
+  :root {
+    --bg: #F5F7FA; --side: #EDF0F5; --panel: #FFFFFF; --raised: #F3F5F9; --line: #DDE3EB;
+    --text: #0F1419; --muted: #5E6773; --faint: #8A929C; --row-hover: rgba(15, 20, 25, .035);
+    --sun-text: #8A6100; --red-text: #B42318; --ext-text: #6941C6;
+    color-scheme: light;
+  }
+}
+@media (prefers-color-scheme: light) { :root { --lit-hi: #0F9E6A; } }
+@media (prefers-color-scheme: light) { .link { color: var(--blue); } }
+@media (prefers-color-scheme: light) { .dialog.alert > .ico.info { --ink: var(--blue); } }
+@media (prefers-color-scheme: light) { :root { --term-bg: #FFFFFF; --term-fg: #1F2328; } }
+@media (prefers-color-scheme: light) { .htdrawer { box-shadow: 0 -8px 22px rgb(0 0 0 / .10); } }
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => { themeBtn(); if (ui.view === "settings") render(); });
+function applyPrefs() {
+  const r = document.documentElement.style;
+}
+<a data-open-site="https://runkiri.com/releases/">dl</a>
+"""
+
 class PatchUpdaterTests(unittest.TestCase):
     def test_patch_wires_arch_linux_updater(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -72,13 +92,14 @@ class PatchUpdaterTests(unittest.TestCase):
             (ui_dir / 'mod.rs').write_text(SAMPLE_UI_MOD_RS, encoding='utf-8')
             (ui_dir / 'k8s.rs').write_text(SAMPLE_K8S_RS, encoding='utf-8')
             (ui_dir / 'gtk.rs').write_text(SAMPLE_GTK_RS, encoding='utf-8')
-            (ui_dir / 'index.html').write_text('<a data-open-site="https://runkiri.com/releases/">dl</a>', encoding='utf-8')
+            (ui_dir / 'index.html').write_text(SAMPLE_INDEX_HTML, encoding='utf-8')
             (root / 'crates/kiri/src/main.rs').write_text(SAMPLE_MAIN_RS, encoding='utf-8')
             patch_updater.patch_tree(root, 'zamkara/kiri-archlinux')
             patched_linux = (ui_dir / 'linux.rs').read_text(encoding='utf-8')
             patched_mod = (ui_dir / 'mod.rs').read_text(encoding='utf-8')
             patched_k8s = (ui_dir / 'k8s.rs').read_text(encoding='utf-8')
             patched_gtk = (ui_dir / 'gtk.rs').read_text(encoding='utf-8')
+            patched_html = (ui_dir / 'index.html').read_text(encoding='utf-8')
             patched_main = (root / 'crates/kiri/src/main.rs').read_text(encoding='utf-8')
             self.assertIn('const ARCH_REPOSITORY: &str = "zamkara/kiri-archlinux"', patched_linux)
             self.assertIn('pub fn run_cli(args: &[String])', patched_linux)
@@ -86,6 +107,8 @@ class PatchUpdaterTests(unittest.TestCase):
             self.assertIn('exec \\"$2\\" ui', patched_mod)
             self.assertIn('super::window::copy(text)', patched_k8s)
             self.assertIn('Command::new("wl-copy")', patched_gtk)
+            self.assertIn(':root[data-theme="light"]', patched_html)
+            self.assertIn('document.documentElement.dataset.theme = darkNow() ? "dark" : "light";', patched_html)
             self.assertIn('ui::linux::update::run_cli', patched_main)
 
 if __name__ == '__main__':
