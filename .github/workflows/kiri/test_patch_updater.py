@@ -62,6 +62,31 @@ SAMPLE_GTK_RS = """pub(super) fn copy(text: &str) {
 }
 """
 
+SAMPLE_LOGINS_RS = """/// Elsewhere there's no store of the system's to keep a sign-in in.
+#[cfg(not(any(target_os = "macos", windows)))]
+mod os {
+    use std::io;
+
+    use super::Login;
+
+    pub const NAME: &str = "a credential helper";
+
+    pub fn get(_key: &str) -> Option<Login> {
+        None
+    }
+
+    pub fn set(_key: &str, _login: &Login) -> io::Result<()> {
+        Err(io::Error::other("set credsStore in ~/.docker/config.json to a credential helper"))
+    }
+
+    pub fn delete(_key: &str) {}
+
+    pub fn list() -> Vec<(String, String)> {
+        Vec::new()
+    }
+}
+"""
+
 SAMPLE_INDEX_HTML = """@media (prefers-color-scheme: light) {
   :root {
     --bg: #F5F7FA; --side: #EDF0F5; --panel: #FFFFFF; --raised: #F3F5F9; --line: #DDE3EB;
@@ -92,6 +117,7 @@ class PatchUpdaterTests(unittest.TestCase):
             (ui_dir / 'mod.rs').write_text(SAMPLE_UI_MOD_RS, encoding='utf-8')
             (ui_dir / 'k8s.rs').write_text(SAMPLE_K8S_RS, encoding='utf-8')
             (ui_dir / 'gtk.rs').write_text(SAMPLE_GTK_RS, encoding='utf-8')
+            (ui_dir / 'logins.rs').write_text(SAMPLE_LOGINS_RS, encoding='utf-8')
             (ui_dir / 'index.html').write_text(SAMPLE_INDEX_HTML, encoding='utf-8')
             (root / 'crates/kiri/src/main.rs').write_text(SAMPLE_MAIN_RS, encoding='utf-8')
             patch_updater.patch_tree(root, 'zamkara/kiri-archlinux')
@@ -99,6 +125,7 @@ class PatchUpdaterTests(unittest.TestCase):
             patched_mod = (ui_dir / 'mod.rs').read_text(encoding='utf-8')
             patched_k8s = (ui_dir / 'k8s.rs').read_text(encoding='utf-8')
             patched_gtk = (ui_dir / 'gtk.rs').read_text(encoding='utf-8')
+            patched_logins = (ui_dir / 'logins.rs').read_text(encoding='utf-8')
             patched_html = (ui_dir / 'index.html').read_text(encoding='utf-8')
             patched_main = (root / 'crates/kiri/src/main.rs').read_text(encoding='utf-8')
             self.assertIn('const ARCH_REPOSITORY: &str = "zamkara/kiri-archlinux"', patched_linux)
@@ -107,6 +134,7 @@ class PatchUpdaterTests(unittest.TestCase):
             self.assertIn('exec \\"$2\\" ui', patched_mod)
             self.assertIn('super::window::copy(text)', patched_k8s)
             self.assertIn('Command::new("wl-copy")', patched_gtk)
+            self.assertIn('pub const NAME: &str = "~/.docker/config.json";', patched_logins)
             self.assertIn(':root[data-theme="light"]', patched_html)
             self.assertIn('document.documentElement.dataset.theme = darkNow() ? "dark" : "light";', patched_html)
             self.assertIn('ui::linux::update::run_cli', patched_main)
