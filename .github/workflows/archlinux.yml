@@ -1,0 +1,117 @@
+name: Daily Arch Linux releases
+
+on:
+  schedule:
+    # Daily at 00:00 Asia/Jakarta (17:00 UTC).
+    - cron: '0 17 * * *'
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/**']
+  pull_request:
+    paths: ['.github/workflows/**']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: kiri-${{ github.event_name == 'pull_request' && github.ref || 'releases' }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Check workflow helpers and release planning
+        run: |
+          python3 -m unittest discover -s .github/workflows/kiri -p 'test_*.py' -v
+          bash -n .github/workflows/kiri/build.sh
+          bash -n .github/workflows/kiri/PKGBUILD.in
+          bash -n .github/workflows/kiri/install.sh.in
+          python3 -m py_compile .github/workflows/kiri/prepare.py .github/workflows/kiri/publish.py .github/workflows/kiri/validate.py .github/workflows/kiri/patch_updater.py
+          python3 - <<'PYROOT'
+          import subprocess
+          entries = set(subprocess.check_output(['git', 'ls-tree', '--name-only', 'HEAD'], text=True).splitlines())
+          missing = {'.github', 'LICENSE', 'README.md'} - entries
+          unexpected = entries - {'.github', 'LICENSE', 'README.md', 'readme.md'}
+          if missing or unexpected:
+              raise SystemExit(f"Invalid repository root: missing={sorted(missing)}, unexpected={sorted(unexpected)}")
+          print('Repository root verified.')
+          PYROOT
+
+  package:
+    needs: validate
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Check upstream and prepare immutable source inputs
+        id: upstream
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 .github/workflows/kiri/prepare.py --directory .github/workflows/.build/kiri
+      - name: Restore build cache
+        if: steps.upstream.outputs.changed == 'true'
+        uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
+        with:
+          path: .github/workflows/.build/kiri/.cache
+          key: arch-x86_64-kiri-${{ steps.upstream.outputs.recipe }}-${{ steps.upstream.outputs.tag }}
+          restore-keys: |
+            arch-x86_64-kiri-${{ steps.upstream.outputs.recipe }}-
+            arch-x86_64-kiri-
+      - name: Build and validate with Arch makepkg
+        if: steps.upstream.outputs.changed == 'true'
+        run: |
+          # Free unused preinstalled SDKs in this disposable hosted runner.
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc
+          if ! swapon --show --noheadings | grep -q .; then
+            sudo fallocate -l 6G /swapfile-kiri
+            sudo chmod 600 /swapfile-kiri
+            sudo mkswap /swapfile-kiri
+            sudo swapon /swapfile-kiri
+          fi
+          docker run --rm \
+            --mount "type=bind,src=$GITHUB_WORKSPACE/.github/workflows/.build/kiri,dst=/build" \
+            --mount "type=bind,src=$GITHUB_WORKSPACE/.github/workflows/kiri,dst=/recipe,readonly" \
+            archlinux:base-devel bash /recipe/build.sh /build /recipe
+      - name: Preserve validated package
+        if: steps.upstream.outputs.changed == 'true'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: arch-kiri-${{ steps.upstream.outputs.tag }}
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 7
+          path: |
+            .github/workflows/.build/kiri/*.pkg.tar.zst
+            .github/workflows/.build/kiri/install.sh
+            .github/workflows/.build/kiri/PKGBUILD
+            .github/workflows/.build/kiri/.SRCINFO
+            .github/workflows/.build/kiri/upstream.json
+            .github/workflows/.build/kiri/SHA256SUMS
+            .github/workflows/.build/kiri/CHANGELOG.md
+      - name: Publish complete release
+        if: steps.upstream.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 .github/workflows/kiri/publish.py .github/workflows/.build/kiri --repository "$GITHUB_REPOSITORY" --target "$GITHUB_SHA"
+      - name: Report result
+        if: success()
+        env:
+          CHANGED: ${{ steps.upstream.outputs.changed }}
+          TAG: ${{ steps.upstream.outputs.tag }}
+        run: |
+          if [[ "$CHANGED" == 'true' ]]; then
+            printf 'kiri: published [%s](https://github.com/%s/releases/tag/%s)\n' "$TAG" "$GITHUB_REPOSITORY" "$TAG" >> "$GITHUB_STEP_SUMMARY"
+          elif [[ "$CHANGED" == 'false' ]]; then
+            printf 'kiri: unchanged upstream and packaging inputs; build skipped.\n' >> "$GITHUB_STEP_SUMMARY"
+          fi
