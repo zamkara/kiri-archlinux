@@ -107,10 +107,12 @@ function applyPrefs() {
 <a data-open-site="https://runkiri.com/releases/">dl</a>
 """
 
-SAMPLE_CONTAINER_RS = """pub fn mount_rootfs(paths: &Paths, id: &str, image_layers: StrList<'_>) -> io::Result<PathBuf> {
+# Upstream merged the rootfs unmounts, so the patcher leaves this file alone.
+SAMPLE_CONTAINER_RS = """pub(super) fn mount_rootfs(paths: &Paths, id: &str, image_layers: &[&str]) -> io::Result<PathBuf> {
     valid_id(id)?;
     let base = paths.containers.join(id);
     let (upper, work, rootfs) = (base.join("upper"), base.join("work"), base.join("rootfs"));
+    let _ = sys::umount_lazy(&rootfs);
     for d in [&upper, &work, &rootfs] {
         fs::create_dir_all(d)?;
     }
@@ -120,13 +122,16 @@ SAMPLE_CONTAINER_RS = """pub fn mount_rootfs(paths: &Paths, id: &str, image_laye
 pub fn sweep(paths: &Paths, cgroup: &std::path::Path) {
     for id in &ids {
         let cg = cgroup.join(id);
-        if !cg.is_dir() {
-            continue;
+        if cg.is_dir() {
+            kill_cgroup(&cg);
         }
-        kill_cgroup(&cg);
-        let _ = sys::umount_lazy(&paths.containers.join(id).join("rootfs"));
+        let rootfs = paths.containers.join(id).join("rootfs");
+        for _ in 0..16 {
+            if sys::umount_lazy(&rootfs).is_err() {
+                break;
+            }
+        }
         let _ = fs::remove_dir_all(PathBuf::from("/run/kiri").join(id));
-        remove_cgroup(&cg);
     }
 }
 """
@@ -166,8 +171,7 @@ class PatchUpdaterTests(unittest.TestCase):
             self.assertIn(':root[data-theme="light"]', patched_html)
             self.assertIn('document.documentElement.dataset.theme = darkNow() ? "dark" : "light";', patched_html)
             self.assertIn('ui::linux::update::run_cli', patched_main)
-            self.assertIn('let _ = sys::umount_lazy(&rootfs);', patched_container)
-            self.assertIn('if cg.is_dir() {', patched_container)
+            self.assertEqual(patched_container, SAMPLE_CONTAINER_RS)
 
 if __name__ == '__main__':
     unittest.main()
