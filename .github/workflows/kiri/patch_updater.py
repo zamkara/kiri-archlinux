@@ -316,13 +316,15 @@ def patch_tree(root: pathlib.Path, repository: str = 'zamkara/kiri-archlinux') -
     if main_rs.is_file():
         main_text = main_rs.read_text(encoding='utf-8')
         old_update_cmd = """        #[cfg(target_os = "macos")]
-        Some("update") => update::run(&args[1..]),"""
+        Some("update") if !docker::is_container_update(&args[1..]) => update::run(&args[1..]),"""
         new_update_cmd = """        #[cfg(target_os = "macos")]
-        Some("update") => update::run(&args[1..]),
+        Some("update") if !docker::is_container_update(&args[1..]) => update::run(&args[1..]),
         #[cfg(all(target_os = "linux", feature = "window"))]
         Some("update") => ui::linux::update::run_cli(&args[1..]),
         #[cfg(all(target_os = "linux", not(feature = "window")))]
         Some("update") => window(&args),"""
+        if old_update_cmd not in main_text:
+            old_update_cmd = old_update_cmd.replace(' if !docker::is_container_update(&args[1..])', '')
         if old_update_cmd not in main_text:
             raise SystemExit('Could not find Some("update") branch in crates/kiri/src/main.rs')
         main_text = main_text.replace(old_update_cmd, new_update_cmd, 1)
